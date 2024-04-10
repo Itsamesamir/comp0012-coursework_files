@@ -3,12 +3,11 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 
-import org.apache.bcel.classfile.ClassParser;
-import org.apache.bcel.classfile.Code;
-import org.apache.bcel.classfile.JavaClass;
-import org.apache.bcel.classfile.Method;
+import org.apache.bcel.classfile.*;
 import org.apache.bcel.generic.ClassGen;
 import org.apache.bcel.generic.ConstantPoolGen;
 import org.apache.bcel.generic.InstructionHandle;
@@ -38,12 +37,14 @@ public class ConstantFolder
 			e.printStackTrace();
 		}
 	}
-	
+
 	public void optimize()
 	{
 		ClassGen cgen = new ClassGen(original);
 		ConstantPoolGen cpgen = cgen.getConstantPool();
-		//Simple folding
+
+		// Implement your optimization here
+
 		Method[] methods = cgen.getMethods();
 		for (Method m : methods) {
 			MethodGen mg = new MethodGen(m, cgen.getClassName(), cpgen);
@@ -51,22 +52,22 @@ public class ConstantFolder
 			if (il == null) {
 				continue;
 			}
+
 			InstructionFinder f = new InstructionFinder(il);
 			boolean changed;
-			do{
+			do
+			{
 				changed=false;
-				for(Iterator i = f.search("(LDC|LDC2_W)(LDC|LDC2_W)(IADD|ISUB|IMUL|IDIV|LADD|LSUB|LMUL|LDIV|DADD|DSUB|DMUL|DDIV|FADD|FSUB|FMUL|FDIV)");i.hasNext();){
+				for(Iterator<InstructionHandle[]> i = f.search("(LDC|LDC2_W)(LDC|LDC2_W)(IADD|ISUB|IMUL|IDIV|LADD|LSUB|LMUL|LDIV|DADD|DSUB|DMUL|DDIV|FADD|FSUB|FMUL|FDIV)"); i.hasNext();){
 					InstructionHandle[] match = (InstructionHandle[]) i.next();
 					InstructionHandle first = match[0];
 					InstructionHandle second = match[1];
 					InstructionHandle third = match[2];
 
+					//Simple folding
 					Number res = calc(first, second, third,cpgen);
 					if(res != null){
-						//InstructionList newIL = new InstructionList();
 						InstructionHandle newInstruct = null;
-						//newInstruct  = il.append(third, new LDC(cpgen.addInteger(res.intValue())));
-						//newIL.append(new LDC(cpgen.addInteger(res.intValue())));
 						if (res instanceof Integer)
 							newInstruct = il.insert(first,  new LDC(cpgen.addInteger(res.intValue())));
 						else if (res instanceof Long)
@@ -76,23 +77,150 @@ public class ConstantFolder
 						else if (res instanceof Double)
 							newInstruct = il.insert(first,  new LDC2_W(cpgen.addDouble(res.doubleValue())));
 
-						//newInstruct = il.insert(first,  new LDC(cpgen.addInteger(res.intValue())));
 						try{
 							if(newInstruct != null){
 								il.delete(first, third);
-								changed = true;
+								//changed = true;
 							}
 						}catch(TargetLostException e){
 							// Auto-generated catch block
 							e.printStackTrace();
 						}
 						//il.delete(first, third);
-						
-						
 					}
 
 				}
-			}while(changed);
+				//dead code elimination
+				// Iterate to find dead code patterns
+				changed = false;
+				for (Iterator<InstructionHandle[]> i = f.search("(return|ireturn|lreturn|freturn|dreturn|areturn)"); i.hasNext(); ) {
+					// Get matched dead code
+					InstructionHandle[] deadCodeMatch = (InstructionHandle[]) i.next();
+					InstructionHandle current = deadCodeMatch[0]; //this is the return instruction
+					InstructionHandle next = current.getNext();
+					List<InstructionHandle> ihList = new ArrayList<>();
+
+					while (next != null) {
+						ihList.add(next);
+						next = next.getNext(); // Move to the next instruction
+					}
+
+					try{
+						for (InstructionHandle toDelete : ihList){
+							il.delete(toDelete);
+						}
+						changed = true;
+					}catch(TargetLostException e){
+						// Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+
+				// Remove empty blocks
+				changed = false;
+				for (Iterator<InstructionHandle[]> i = f.search("goto|goto_w"); i.hasNext(); ) {
+					InstructionHandle[] emptyBlockMatch = (InstructionHandle[]) i.next();
+					InstructionHandle current = emptyBlockMatch[0];
+
+					if (current.getInstruction() instanceof GOTO gotoInstruction) {
+                        InstructionHandle targetHandle = gotoInstruction.getTarget();
+						//targetHandle points to the target of the GOTO instruction.
+						if (targetHandle.getInstruction() instanceof GOTO || targetHandle.getInstruction() instanceof NOP) {
+							// Remove the current GOTO instruction since it leads to an empty block
+							try {
+								il.delete(current);
+								changed = true;
+							} catch (TargetLostException e) {
+								// Handle the case when deleting the instruction causes other target handles to be lost
+								e.printStackTrace();
+							}
+						}
+					}
+				}
+
+				changed = false;
+				//algebraic simplifications
+				// handle any 0s in + and -
+				for (Iterator<InstructionHandle[]> i = f.search("(LDC|LDC2_W)(LDC|LDC2_W)(IADD|ISUB|LADD|LSUB|DADD|DSUB|FADD|FSUB)"); i.hasNext();){
+					InstructionHandle [] match = (InstructionHandle[]) i.next();
+					InstructionHandle first = match[0];
+					InstructionHandle second = match[1];
+					InstructionHandle third = match[2];
+
+					Number res = 0;
+					if (first.getInstruction() instanceof LDC) {
+						LDC ldcInstruction = (LDC) first.getInstruction();
+						Object value = ldcInstruction.getValue(cpgen);
+						if (value instanceof Number && ((Number) value).intValue() == 0) {
+							// If the operation is addition/subtraction and the first operand is 0,
+							// we can replace the operation with the second operand directly.
+							try{
+								InstructionHandle newInstruct = il.insert(first, second.getInstruction().copy());
+								il.delete(first, third);
+								changed = true;
+							}catch(TargetLostException e){
+								e.printStackTrace();
+							}
+						}
+					}
+					if (second.getInstruction() instanceof LDC) {
+						LDC ldcInstruction2 = (LDC) second.getInstruction();
+						Object value = ldcInstruction2.getValue(cpgen);
+						if (value instanceof Number && ((Number) value).intValue() == 0) {
+							//same but we replace it with the first operand this time
+							try{
+								InstructionHandle newInstruct = il.insert(first, first.getInstruction().copy());
+								il.delete(first, third);
+								changed = true;
+							}catch(TargetLostException e){
+								e.printStackTrace();
+							}
+						}
+					}
+
+				}
+				//handle any 1s in multiplication and division
+				for (Iterator<InstructionHandle[]> i = f.search("(LDC|LDC2_W)(LDC|LDC2_W)(IMUL|IDIV|LMUL|LDIV|DMUL|DDIV|FMUL|FDIV)"); i.hasNext();){
+					InstructionHandle [] match = (InstructionHandle[]) i.next();
+					InstructionHandle first = match[0];
+					InstructionHandle second = match[1];
+					InstructionHandle third = match[2];
+
+					if (first.getInstruction() instanceof LDC) {
+						LDC ldcInstruction = (LDC) first.getInstruction();
+						Object value = ldcInstruction.getValue(cpgen);
+						if (value instanceof Number && ((Number) value).intValue() == 1) {
+							// If the operation is multiplication/division and the first operand is 1,
+							// we can replace the operation with the second operand directly.
+							try{
+								InstructionHandle newInstruct = il.insert(first, second.getInstruction().copy());
+								il.delete(first, third);
+								changed = true;
+							}catch(TargetLostException e){
+								e.printStackTrace();
+							}
+						}
+					}
+					if (second.getInstruction() instanceof LDC) {
+						LDC ldcInstruction2 = (LDC) second.getInstruction();
+						Object value = ldcInstruction2.getValue(cpgen);
+						if (value instanceof Number && ((Number) value).intValue() == 1) {
+							//same but we replace it with the first operand this time
+							try{
+								InstructionHandle newInstruct = il.insert(first, first.getInstruction().copy());
+								il.delete(first, third);
+								changed = true;
+							}catch(TargetLostException e){
+								e.printStackTrace();
+							}
+						}
+					}
+				}
+
+				//might try to do some strength reduction
+
+
+			} while(changed);
 
 			il.setPositions(true);
 			mg.setMaxStack();
@@ -100,10 +228,10 @@ public class ConstantFolder
 			cgen.replaceMethod(m, mg.getMethod());
 		}
 
-		// Implement your optimization here
-        
 		this.optimized = cgen.getJavaClass();
 	}
+
+
 	private Number calc (InstructionHandle first, InstructionHandle second, InstructionHandle third, ConstantPoolGen cpgen){
 		Number firstValue = null;
 		Number secondValue = null;
@@ -112,7 +240,7 @@ public class ConstantFolder
 			//System.out.println(firstValue);
 		}
 		else if(first.getInstruction() instanceof LDC2_W){
-			
+
 			firstValue = (Number)((LDC2_W)first.getInstruction()).getValue(cpgen);
 			//System.out.println("1x");
 		}
@@ -130,12 +258,12 @@ public class ConstantFolder
 		else{
 			//System.out.println("y");
 		}
-		
+
 		//System.out.println(first.getInstruction() );
-		
-			
+
+
 		if(firstValue == null || secondValue == null){
-			
+
 			return null;
 		}
 		Number result = null;
@@ -201,7 +329,7 @@ public class ConstantFolder
 		//System.out.println(result);
 		return result;
 	}
-	
+
 	public void write(String optimisedFilePath)
 	{
 		this.optimize();
