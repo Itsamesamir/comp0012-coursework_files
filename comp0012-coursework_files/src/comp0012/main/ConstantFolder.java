@@ -44,7 +44,6 @@ public class ConstantFolder
 		ConstantPoolGen cpgen = cgen.getConstantPool();
 
 		// Implement your optimization here
-
 		Method[] methods = cgen.getMethods();
 		for (Method m : methods) {
 			MethodGen mg = new MethodGen(m, cgen.getClassName(), cpgen);
@@ -218,6 +217,32 @@ public class ConstantFolder
 				}
 
 				//might try to do some strength reduction
+				changed = false;
+				for (Iterator<InstructionHandle[]> it = f.search("(LDC|LDC2_W) IMUL"); it.hasNext(); ) {
+					InstructionHandle[] match = it.next();
+					InstructionHandle first = match[0];  // LDC or LDC2_W instruction handle
+					InstructionHandle second = match[1]; // IMUL instruction handle
+
+					if (first.getInstruction() instanceof LDC) {
+						LDC ldc = (LDC) first.getInstruction();
+						Object value = ldc.getValue(cpgen);
+						if (value instanceof Integer) {
+							int intValue = (Integer) value;
+							if (Integer.bitCount(intValue) == 1) { // Check if it's a power of 2
+								int shift = Integer.numberOfTrailingZeros(intValue);
+								// Assuming the multiplication's result is used just after this, and we replace it with shift
+								il.append(new BIPUSH((byte)shift)); // Load the shift amount onto the stack
+								il.append(new ISHL()); // Apply left shift
+								try {
+									il.delete(first, second);
+									changed = true;// Remove the multiplication instruction
+								} catch (TargetLostException e) {
+									e.printStackTrace();
+								}
+							}
+						}
+					}
+				}
 
 
 			} while(changed);
