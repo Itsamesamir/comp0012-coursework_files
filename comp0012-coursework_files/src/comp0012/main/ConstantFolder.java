@@ -123,7 +123,7 @@ public class ConstantFolder
 					InstructionHandle current = emptyBlockMatch[0];
 
 					if (current.getInstruction() instanceof GOTO gotoInstruction) {
-                        InstructionHandle targetHandle = gotoInstruction.getTarget();
+						InstructionHandle targetHandle = gotoInstruction.getTarget();
 						//targetHandle points to the target of the GOTO instruction.
 						if (targetHandle.getInstruction() instanceof GOTO || targetHandle.getInstruction() instanceof NOP) {
 							// Remove the current GOTO instruction since it leads to an empty block
