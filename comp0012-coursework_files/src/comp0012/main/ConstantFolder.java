@@ -238,121 +238,29 @@ public class ConstantFolder
 					}
 				}
 
+				for (Iterator<InstructionHandle[]> it = f.search("(LDC|LDC2_W) IDIV"); it.hasNext(); ) {
+					InstructionHandle[] match = it.next();
+					InstructionHandle first = match[0];
+					InstructionHandle second = match[1];
 
-
-
-
-				// Task2: constant folding
-				Map<Integer, Number> constantValues = new HashMap<>();
-				boolean skipNext = false;  // whether skipping the next StoreInstruction
-
-				for (InstructionHandle ih : il.getInstructionHandles()) {
-					Instruction ins = ih.getInstruction();
-
-					if (skipNext) {
-						skipNext = false;  // Reset the flag and skip this iteration's removal logic
-						continue;
-					}else
-
-						// assign by pushing
-						if (ins instanceof BIPUSH || ins instanceof SIPUSH) {
-							Number value =  ((ins instanceof BIPUSH) ? ((BIPUSH) ins).getValue() : ((SIPUSH) ins).getValue());
-							InstructionHandle next = ih.getNext();
-							if (next != null && next.getInstruction() instanceof StoreInstruction) {
-								int index = ((LocalVariableInstruction) next.getInstruction()).getIndex();
-								constantValues.put(index, value);
-								skipNext = true;
-								System.out.println("put in hashmap:" + value);
-							}
-
-							// assign by loading
-						}else if (ins instanceof LDC) {
-
-							LDC ldc = (LDC) ins;
-							Object value = ldc.getValue(cpgen);
-//							System.out.println("LDC instruction found, get value: " + value);
-							if (value instanceof Number) {
-								InstructionHandle next = ih.getNext();
-								if (next != null && next.getInstruction() instanceof StoreInstruction) {
-									int index = ((LocalVariableInstruction) next.getInstruction()).getIndex();
-									constantValues.put(index, (Number) value);
-									skipNext = true;
-//									System.out.println("put in hashmap:" + value);
-								}
-							}
-						}else if (ins instanceof LDC2_W) {
-
-							LDC2_W ldc = (LDC2_W) ins;
-							Object value = ldc.getValue(cpgen);
-//							System.out.println("LDC2_W instruction found, get value: " + value);
-							if (value instanceof Number) {
-								InstructionHandle next = ih.getNext();
-								if (next != null && next.getInstruction() instanceof StoreInstruction) {
-									int index = ((LocalVariableInstruction) next.getInstruction()).getIndex();
-									constantValues.put(index, (Number) value);
-									skipNext = true;
-//									System.out.println("put in hashmap:" + value);
-								}
-							}
-
-
-							// Invalidate constant status on variable overwrite
-						}else if (ins instanceof StoreInstruction && !(ins instanceof IINC)) {
-							int index = ((LocalVariableInstruction) ins).getIndex();
-							if (constantValues.containsKey(index)) {
-								System.out.println("remove from hashmap:"+constantValues.get(index));
-								constantValues.remove(index);  // Remove from map if variable is overwritten
-
-							}
-						}
-				}
-
-//				System.out.println("\nKeys in hashmap:");
-//				constantValues.keySet().stream().forEach(System.out::println);
-//				System.out.println("End of keys in hashmap\n");
-
-				// Replace variable loads with constant values
-				for (InstructionHandle ih : il.getInstructionHandles()) {
-					Instruction ins = ih.getInstruction();
-					if (ins instanceof LoadInstruction) {
-						int index = ((LocalVariableInstruction) ins).getIndex();
-//				System.out.println("instruction index: "+index);
-						Number value = constantValues.get(index);
-//				System.out.println("hashmap value for index: "+value);
-						if (value != null) {
-//					System.out.println("Found in hashmap");
-//					Instruction newInst = (value instanceof Integer) ? new LDC(cpgen.addInteger(value.intValue())) :
-//							(value instanceof Float) ? new LDC(cpgen.addFloat(value.floatValue())) : null;
-							InstructionHandle newInstruct = null;
-							if (value instanceof Integer)
-								newInstruct = il.insert(ih,  new LDC(cpgen.addInteger(value.intValue())));
-							else if (value instanceof Long)
-								newInstruct = il.insert(ih,  new LDC2_W(cpgen.addLong(value.longValue())));
-							else if (value instanceof Float)
-								newInstruct = il.insert(ih,  new LDC(cpgen.addFloat(value.floatValue())));
-							else if (value instanceof Double)
-								newInstruct = il.insert(ih,  new LDC2_W(cpgen.addDouble(value.doubleValue())));
-							if (newInstruct != null) {
-//						System.out.println("Replace instruction");
-//						InstructionHandle newIh = il.insert(ih, newInstruct);
+					if (first.getInstruction() instanceof LDC) {
+						LDC ldc = (LDC) first.getInstruction();
+						Object value = ldc.getValue(cpgen);
+						if (value instanceof Integer) {
+							int intValue = (Integer) value;
+							if (Integer.bitCount(intValue) == 1) {
+								int shift = Integer.numberOfTrailingZeros(intValue);
+								il.append(new BIPUSH((byte)shift));
+								il.append(new ISHR()); // Apply right shift instead of left
 								try {
-									il.delete(ih);
-									il.setPositions(true);
-									mg.setMaxStack();
-									mg.setMaxLocals();
-									changed = true;
+									il.delete(first, second);
 								} catch (TargetLostException e) {
-									for (InstructionHandle target : e.getTargets()) {
-										for (InstructionTargeter targeter : target.getTargeters()) {
-											targeter.updateTarget(target, newInstruct);
-										}
-									}
+									e.printStackTrace();
 								}
 							}
 						}
 					}
 				}
-
 
 
 			} while(changed);
