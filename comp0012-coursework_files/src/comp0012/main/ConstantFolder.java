@@ -111,7 +111,6 @@ public class ConstantFolder
 						for (InstructionHandle toDelete : ihList){
 							il.delete(toDelete);
 						}
-						changed = true;
 					}catch(TargetLostException e){
 						// Auto-generated catch block
 						e.printStackTrace();
@@ -119,7 +118,6 @@ public class ConstantFolder
 				}
 
 				// Remove empty blocks
-				changed = false;
 				for (Iterator<InstructionHandle[]> i = f.search("goto|goto_w"); i.hasNext(); ) {
 					InstructionHandle[] emptyBlockMatch = (InstructionHandle[]) i.next();
 					InstructionHandle current = emptyBlockMatch[0];
@@ -131,7 +129,6 @@ public class ConstantFolder
 							// Remove the current GOTO instruction since it leads to an empty block
 							try {
 								il.delete(current);
-								changed = true;
 							} catch (TargetLostException e) {
 								// Handle the case when deleting the instruction causes other target handles to be lost
 								e.printStackTrace();
@@ -140,7 +137,6 @@ public class ConstantFolder
 					}
 				}
 
-				changed = false;
 				//algebraic simplifications
 				// handle any 0s in + and -
 				for (Iterator<InstructionHandle[]> i = f.search("(LDC|LDC2_W)(LDC|LDC2_W)(IADD|ISUB|LADD|LSUB|DADD|DSUB|FADD|FSUB)"); i.hasNext();){
@@ -159,7 +155,6 @@ public class ConstantFolder
 							try{
 								InstructionHandle newInstruct = il.insert(first, second.getInstruction().copy());
 								il.delete(first, third);
-								changed = true;
 							}catch(TargetLostException e){
 								e.printStackTrace();
 							}
@@ -173,7 +168,6 @@ public class ConstantFolder
 							try{
 								InstructionHandle newInstruct = il.insert(first, first.getInstruction().copy());
 								il.delete(first, third);
-								changed = true;
 							}catch(TargetLostException e){
 								e.printStackTrace();
 							}
@@ -197,7 +191,6 @@ public class ConstantFolder
 							try{
 								InstructionHandle newInstruct = il.insert(first, second.getInstruction().copy());
 								il.delete(first, third);
-								changed = true;
 							}catch(TargetLostException e){
 								e.printStackTrace();
 							}
@@ -211,7 +204,6 @@ public class ConstantFolder
 							try{
 								InstructionHandle newInstruct = il.insert(first, first.getInstruction().copy());
 								il.delete(first, third);
-								changed = true;
 							}catch(TargetLostException e){
 								e.printStackTrace();
 							}
@@ -220,7 +212,6 @@ public class ConstantFolder
 				}
 
 				//might try to do some strength reduction
-				changed = false;
 				for (Iterator<InstructionHandle[]> it = f.search("(LDC|LDC2_W) IMUL"); it.hasNext(); ) {
 					InstructionHandle[] match = it.next();
 					InstructionHandle first = match[0];  // LDC or LDC2_W instruction handle
@@ -246,6 +237,9 @@ public class ConstantFolder
 						}
 					}
 				}
+
+
+
 
 
 				// Task2: constant folding
@@ -513,9 +507,6 @@ public class ConstantFolder
 		if (optimisedFilePath.contains("ConstantVariableFolding")){
 			this.printOptimizedBytecode();
 		}
-
-
-
 
 		try {
 			FileOutputStream out = new FileOutputStream(new File(optimisedFilePath));
