@@ -93,10 +93,9 @@ public class ConstantFolder
 
 				}
 				//dead code elimination
-				// Iterate to find dead code patterns
+				//reachable code after return statements won't be run
 				changed = false;
 				for (Iterator<InstructionHandle[]> i = f.search("(return|ireturn|lreturn|freturn|dreturn|areturn)"); i.hasNext(); ) {
-					// Get matched dead code
 					InstructionHandle[] deadCodeMatch = (InstructionHandle[]) i.next();
 					InstructionHandle current = deadCodeMatch[0]; //this is the return instruction
 					InstructionHandle next = current.getNext();
@@ -117,7 +116,7 @@ public class ConstantFolder
 					}
 				}
 
-				// Remove empty blocks
+				// Remove empty blocks (dead code elimination/branching)
 				for (Iterator<InstructionHandle[]> i = f.search("goto|goto_w"); i.hasNext(); ) {
 					InstructionHandle[] emptyBlockMatch = (InstructionHandle[]) i.next();
 					InstructionHandle current = emptyBlockMatch[0];
@@ -173,8 +172,8 @@ public class ConstantFolder
 							}
 						}
 					}
-
 				}
+
 				//handle any 1s in multiplication and division
 				for (Iterator<InstructionHandle[]> i = f.search("(LDC|LDC2_W)(LDC|LDC2_W)(IMUL|IDIV|LMUL|LDIV|DMUL|DDIV|FMUL|FDIV)"); i.hasNext();){
 					InstructionHandle [] match = (InstructionHandle[]) i.next();
@@ -211,7 +210,7 @@ public class ConstantFolder
 					}
 				}
 
-				//might try to do some strength reduction
+				//strength reduction: shift operations
 				for (Iterator<InstructionHandle[]> it = f.search("(LDC|LDC2_W) IMUL"); it.hasNext(); ) {
 					InstructionHandle[] match = it.next();
 					InstructionHandle first = match[0];  // LDC or LDC2_W instruction handle
