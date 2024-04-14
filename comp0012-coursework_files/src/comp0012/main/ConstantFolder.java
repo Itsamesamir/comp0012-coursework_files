@@ -57,17 +57,20 @@ public class ConstantFolder
 			boolean changed;
 			do
 			{
+				//variable used to check if any optimizaation change has been made
 				changed=false;
+				//search for pattern of a arithmetic instruction
 				for(Iterator<InstructionHandle[]> i = f.search("(LDC|LDC2_W)(LDC|LDC2_W)(IADD|ISUB|IMUL|IDIV|LADD|LSUB|LMUL|LDIV|DADD|DSUB|DMUL|DDIV|FADD|FSUB|FMUL|FDIV)"); i.hasNext();){
 					InstructionHandle[] match = (InstructionHandle[]) i.next();
 					InstructionHandle first = match[0];
 					InstructionHandle second = match[1];
 					InstructionHandle third = match[2];
-
-					//Simple folding
+					
+					
 					Number res = calc(first, second, third,cpgen);
 					if(res != null){
 						InstructionHandle newInstruct = null;
+						//insert single load instruction before the older 3 instructions
 						if (res instanceof Integer)
 							newInstruct = il.insert(first,  new LDC(cpgen.addInteger(res.intValue())));
 						else if (res instanceof Long)
@@ -79,14 +82,41 @@ public class ConstantFolder
 
 						try{
 							if(newInstruct != null){
+								//new change has been made and delete the older 3 instructions
 								il.delete(first, third);
-								//changed = true;
+								changed = true;
 							}
 						}catch(TargetLostException e){
-							// Auto-generated catch block
+							
 							e.printStackTrace();
 						}
-						//il.delete(first, third);
+						
+					}
+
+				}
+				//search for a pattern of comparison instructions
+				for(Iterator<InstructionHandle[]> i = f.search("(LDC|LDC2_W)(LDC|LDC2_W)(IF_ICMPEQ|IF_ICMPNE|IF_ICMPLT|IF_ICMPGE|IF_ICMPGT|IF_ICMPLE|LCMP|FCMPG|FCMPL|DCMPG|DCMPL)"); i.hasNext();){
+					InstructionHandle[] match = (InstructionHandle[]) i.next();
+					InstructionHandle firstc = match[0];
+					InstructionHandle secondc = match[1];
+					InstructionHandle thirdc = match[2];
+					
+					
+					Boolean resc = calcComparison(firstc, secondc, thirdc,cpgen);
+					if(resc != null){
+						InstructionHandle newInstruct = null;
+						
+						newInstruct = il.insert(firstc,resc? new ICONST(1): new ICONST(0));
+						try{
+							if(newInstruct != null){
+								il.delete(firstc, thirdc);
+								
+							}
+						}catch(TargetLostException e){
+							
+							e.printStackTrace();
+						}
+						
 					}
 
 				}
@@ -237,36 +267,27 @@ public class ConstantFolder
 		Number secondValue = null;
 		if(first.getInstruction() instanceof LDC){
 			firstValue = (Number)((LDC)first.getInstruction()).getValue(cpgen);
-			//System.out.println(firstValue);
+			
 		}
 		else if(first.getInstruction() instanceof LDC2_W){
 
 			firstValue = (Number)((LDC2_W)first.getInstruction()).getValue(cpgen);
-			//System.out.println("1x");
-		}
-		else{
-			//System.out.println("x");
+			
 		}
 		if(second.getInstruction() instanceof LDC){
 			secondValue = (Number)((LDC)second.getInstruction()).getValue(cpgen);
-			//System.out.println("2");
+			
 		}
 		else if (second.getInstruction() instanceof LDC2_W){
 			secondValue = (Number)((LDC2_W)second.getInstruction()).getValue(cpgen);
-			//System.out.println("2x");
+			
 		}
-		else{
-			//System.out.println("y");
-		}
-
-		//System.out.println(first.getInstruction() );
-
-
 		if(firstValue == null || secondValue == null){
 
 			return null;
 		}
 		Number result = null;
+		//calculate the actual arithmetic operation
 		if(firstValue instanceof Integer && secondValue instanceof Integer){
 			if(third.getInstruction() instanceof IADD){
 				result = firstValue.intValue() + secondValue.intValue();
@@ -330,6 +351,72 @@ public class ConstantFolder
 		return result;
 	}
 
+	private Boolean calcComparison(InstructionHandle first, InstructionHandle second, InstructionHandle operation, ConstantPoolGen cpgen) {
+		Number firstValue = null;
+		Number secondValue = null;
+		int comparisonResult ;
+		if(first.getInstruction() instanceof LDC){
+			firstValue = (Number)((LDC)first.getInstruction()).getValue(cpgen);
+			
+		}
+		else if(first.getInstruction() instanceof LDC2_W){
+
+			firstValue = (Number)((LDC2_W)first.getInstruction()).getValue(cpgen);
+			
+		}
+		if(second.getInstruction() instanceof LDC){
+			secondValue = (Number)((LDC)second.getInstruction()).getValue(cpgen);
+			
+		}
+		else if (second.getInstruction() instanceof LDC2_W){
+			secondValue = (Number)((LDC2_W)second.getInstruction()).getValue(cpgen);
+			
+		}
+
+		if (firstValue == null || secondValue == null) return null;
+		if (!(firstValue instanceof Number) || !(secondValue instanceof Number)) return null;
+
+		Instruction instr = operation.getInstruction();
+		Number fNum = (Number)firstValue;
+		Number sNum = (Number)secondValue;
+
+		if (instr instanceof IF_ICMPEQ) {
+			return fNum.intValue() == sNum.intValue();
+		} else if (instr instanceof IF_ICMPNE) {
+			return fNum.intValue() != sNum.intValue();
+		} else if (instr instanceof IF_ICMPLT) {
+			return fNum.intValue() < sNum.intValue();
+		} else if (instr instanceof IF_ICMPGE) {
+			return fNum.intValue() >= sNum.intValue();
+		} else if (instr instanceof IF_ICMPGT) {
+			
+			return fNum.intValue() > sNum.intValue();
+		} else if (instr instanceof IF_ICMPLE) {
+			return fNum.intValue() <= sNum.intValue();
+	
+		}else if (instr instanceof LCMP) {
+			comparisonResult = Long.compare(fNum.longValue(), sNum.longValue());
+			return comparisonResult == 0 ? true : comparisonResult > 0;
+		} else if (instr instanceof FCMPG) {
+			comparisonResult = Float.compare(fNum.floatValue(), sNum.floatValue());
+			return comparisonResult == 0 ? true : comparisonResult > 0;
+			
+		}else if (instr instanceof FCMPL) {
+			comparisonResult = Float.compare(fNum.floatValue(), sNum.floatValue());
+			return comparisonResult == 0 ? true : comparisonResult < 0;
+			
+		}  else if (instr instanceof DCMPG) {
+			comparisonResult = Double.compare(fNum.doubleValue(), sNum.doubleValue());
+			return comparisonResult == 0 ? true : comparisonResult > 0;
+		}else if (instr instanceof FCMPG || instr instanceof DCMPL) {
+			comparisonResult = Float.compare(fNum.floatValue(), sNum.floatValue());
+			return comparisonResult == 0 ? true : comparisonResult < 0;
+			
+		} 
+	
+		return null;
+	
+	}
 	public void write(String optimisedFilePath)
 	{
 		this.optimize();
