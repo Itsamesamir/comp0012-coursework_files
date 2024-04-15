@@ -105,8 +105,7 @@ public class ConstantFolder {
 						InstructionHandle endOfInterval = findEndInterval(storeInstruct.getNext(), localIndex, il);
 
 						// replace the access of variable in the interval with the value
-						replaceVariableAccesses(storeInstruct.getNext(), endOfInterval, localIndex, constantValue, il,
-								cgen);
+						replaceVariableAccesses(storeInstruct.getNext(), endOfInterval, localIndex, constantValue, il);
 						changed = true;
 
 						// delete the variable assignment and ldc instruction
@@ -161,14 +160,12 @@ public class ConstantFolder {
 			Instruction instruction = current.getInstruction();
 			if (instruction instanceof LoadInstruction && ((LoadInstruction) instruction).getIndex() == localVarIndex) {
 				// Determine the type of constant value and add it to the constant pool
-				// accordingly
 				if (constantValue instanceof Integer) {
 					il.insert(current, new LDC(constantValue.intValue()));
 				} else if (constantValue instanceof Long) {
 					long longValue = constantValue.longValue();
 					if (longValue >= Integer.MIN_VALUE && longValue <= Integer.MAX_VALUE) {
-						// Load as int if it fits within the range
-						il.insert(current, new LDC((int) longValue));
+						il.insert(current, new LDC(longValue));
 					} else {
 						// Otherwise, load as long
 						il.insert(current, new LDC2_W(longValue));
