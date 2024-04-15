@@ -246,7 +246,31 @@ public class ConstantFolder
 						}
 					}
 				}
+				for (Iterator<InstructionHandle[]> j = f.search("(ISTORE|LSTORE|FSTORE|DSTORE) LDC"); j
+							.hasNext();) {
+						InstructionHandle[] currentMatch = j.next();
+						InstructionHandle storeInstruct = currentMatch[0];
+						InstructionHandle ldcInstruct = currentMatch[1];
 
+						// get the value of the constant
+						int localIndex = ((StoreInstruction) storeInstruct.getInstruction()).getIndex();
+						Number constantValue = (Number) ((LDC) ldcInstruct.getInstruction()).getValue(cpgen);
+
+						// find where the interval ends for current variable assignment
+						InstructionHandle endOfInterval = findEndInterval(storeInstruct.getNext(), localIndex, il);
+
+						// replace the access of variable in the interval with the value
+						replaceVariableAccesses(storeInstruct.getNext(), endOfInterval, localIndex, constantValue, il,
+								cpgen);
+						changed = true;
+
+						// delete the variable assignment and ldc instruction
+						try {
+							il.delete(storeInstruct, endOfInterval);
+						} catch (TargetLostException e) {
+							e.printStackTrace();
+						}
+					}
 				//might try to do some strength reduction
 
 
@@ -416,6 +440,79 @@ public class ConstantFolder
 	
 		return null;
 	
+	}
+
+	private InstructionHandle findEndInterval(InstructionHandle start, int localVarIndex, InstructionList il) {
+
+		InstructionHandle current = start;
+		// Iterate through the instructions until the end of the method or until a new
+		// assignment to the variable
+		while (current != null && !isVariableAssignment(current, localVarIndex)) {
+			current = current.getNext();
+		}
+		// If a new assignment was found, set the end of the interval to the previous
+		// instruction
+		// Otherwise, set it to the end of the method
+		if (current != null) {
+			return current.getPrev();
+		} else {
+			return il.getEnd();
+		}
+	}
+
+	private boolean isVariableAssignment(InstructionHandle instruction, int localVarIndex) {
+		return (instruction.getInstruction() instanceof StoreInstruction
+				&& ((StoreInstruction) instruction.getInstruction()).getIndex() == localVarIndex);
+	}
+
+	private void replaceVariableAccesses(InstructionHandle start, InstructionHandle end, int localVarIndex,
+			Number constantValue, InstructionList il, ConstantPoolGen cpgen) {
+		InstructionHandle current = start;
+		while (current != end.getNext()) {
+			Instruction instruction = current.getInstruction();
+			if (instruction instanceof LoadInstruction && ((LoadInstruction) instruction).getIndex() == localVarIndex) {
+				// Determine the type of constant value and add it to the constant pool
+				// accordingly
+				if (constantValue instanceof Integer) {
+					il.insert(current,  new LDC(cpgen.addInteger(constantValue.intValue())));
+				} else if (constantValue instanceof Long) {
+					long longValue = constantValue.longValue();
+					if (longValue >= Integer.MIN_VALUE && longValue <= Integer.MAX_VALUE) {
+						// Load as int if it fits within the range
+						il.insert(current, new LDC((int) longValue));
+					} else {
+						// Otherwise, load as long
+						il.insert(current,  new LDC2_W(cpgen.addLong(constantValue.longValue())));
+					}
+				} else if (constantValue instanceof Float) {
+					float floatValue = constantValue.floatValue();
+					// Check if the float value is within the range of an int
+					if (floatValue >= Integer.MIN_VALUE && floatValue <= Integer.MAX_VALUE) {
+						// Load as int if it fits within the range
+						il.insert(current, new LDC((int) floatValue));
+					} else {
+						// Otherwise, load as float
+						il.insert(current,  new LDC(cpgen.addFloat(constantValue.floatValue())));
+					}
+				} else if (constantValue instanceof Double) {
+					double doubleValue = constantValue.doubleValue();
+					// Check if the double value is within the range of an int
+					if (doubleValue >= Integer.MIN_VALUE && doubleValue <= Integer.MAX_VALUE) {
+						// Load as int if it fits within the range
+						il.insert(current, new LDC((int) doubleValue));
+					} else {
+						// Otherwise, load as double
+						il.insert(current,  new LDC2_W(cpgen.addDouble(constantValue.doubleValue())));
+					}
+				}
+				// try {
+				// 	il.delete(current);
+				// } catch (TargetLostException e) {
+				// 	e.printStackTrace();
+				// }
+			}
+			current = current.getNext();
+		}
 	}
 	public void write(String optimisedFilePath)
 	{
