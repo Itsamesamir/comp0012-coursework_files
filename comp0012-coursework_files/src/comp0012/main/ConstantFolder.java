@@ -144,7 +144,6 @@ public class ConstantFolder
 					InstructionHandle second = match[1];
 					InstructionHandle third = match[2];
 
-					Number res = 0;
 					if (first.getInstruction() instanceof LDC) {
 						LDC ldcInstruction = (LDC) first.getInstruction();
 						Object value = ldcInstruction.getValue(cpgen);
